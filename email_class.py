@@ -20,14 +20,7 @@ class EmailMessage(email.message.EmailMessage):
         self['To'] = receiver
         self['Subject'] = title
         self.set_content(text)
-        if attachment_filepath:
-            ctype, encoding = mimetypes.guess_type(attachment_filepath)
-            if ctype is None:
-                ctype = 'application/octet-stream'
-            maintype, subtype = ctype.split('/')
-            with open(attachment_filepath, 'rb') as attachment_file:
-                self.add_attachment(attachment_file.read(), maintype=maintype, subtype=subtype,
-                                    filename=os.path.basename(attachment_filepath))
+        self.attachment_path = attachment_filepath
         self.time_unit = time_unit
         self.time_count = time_count
         self.last_sent = None
@@ -38,6 +31,14 @@ class EmailMessage(email.message.EmailMessage):
         assert isinstance(port, int)
         assert isinstance(username, str)
         assert isinstance(password, str)
+        if self.attachment_path:
+            ctype, encoding = mimetypes.guess_type(self.attachment_path)
+            if ctype is None:
+                ctype = 'application/octet-stream'
+            maintype, subtype = ctype.split('/')
+            with open(self.attachment_path, 'rb') as attachment_file:
+                self.add_attachment(attachment_file.read(), maintype=maintype, subtype=subtype,
+                                    filename=os.path.basename(self.attachment_path))
         if tls:
             smtp_server = SMTP_SSL(server, port)
         else:
