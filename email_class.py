@@ -13,12 +13,14 @@ class EmailMessage(email.message.EmailMessage):
         assert isinstance(title, str)
         assert isinstance(text, str)
         assert attachment_filepath is None or isinstance(attachment_filepath, str)
+        assert time_unit in 'mhdwMY'
+        assert isinstance(time_count, int)
         super().__init__()
         self['From'] = sender
         self['To'] = receiver
         self['Subject'] = title
         self.set_content(text)
-        if attachment_filepath is not None:
+        if attachment_filepath:
             ctype, encoding = mimetypes.guess_type(attachment_filepath)
             if ctype is None:
                 ctype = 'application/octet-stream'
@@ -43,9 +45,4 @@ class EmailMessage(email.message.EmailMessage):
         smtp_server.login(username, password)
         smtp_server.send_message(self)
         smtp_server.quit()
-        self.last_sent = datetime.utcnow()
-
-    def set_time_params(self, unit, count):
-        self.time_unit = unit
-        self.time_count = count
-
+        self.last_sent = datetime.now()

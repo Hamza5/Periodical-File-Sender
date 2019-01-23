@@ -21,7 +21,7 @@ class SendingTimeMonitor(Thread):
 
     def get_ready_messages(self):
         ready_messages = []
-        now = datetime.utcnow()
+        now = datetime.now()
         for message in self.messages:
             assert isinstance(message, EmailMessage)
             if message.next_send <= now:
@@ -38,19 +38,28 @@ class SendingTimeMonitor(Thread):
                 assert isinstance(msg, EmailMessage)
                 print('Sending...')
                 msg.send(self.server_address, self.server_port, self.username, self.password, self.tls)
-                if msg.time_unit == 'M':
-                    msg.next_send = (msg.last_sent + timedelta(days=31 * msg.time_count))\
-                        .replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                elif msg.time_unit == 'Y':
-                    msg.next_send = (msg.last_sent + timedelta(days=366 * msg.time_count))\
-                        .replace(day=1, month=1, hour=0, minute=0, second=0, microsecond=0)
-                elif msg.time_unit == 'w':
-                    msg.next_send = msg.last_sent + timedelta(weeks=msg.time_count)
-                elif msg.time_unit == 'd':
-                    msg.next_send = msg.last_sent + timedelta(days=msg.time_count)
-                elif msg.time_unit == 'h':
-                    msg.next_send = msg.last_sent + timedelta(hours=msg.time_count)
-                elif msg.time_unit == 'm':
-                    msg.next_send = msg.last_sent + timedelta(minutes=msg.time_count)
                 print('Email "{}" sent on {}'.format(msg['Subject'], msg.last_sent))
+                self.set_next_send(msg)
         # TODO update the GUI
+
+    @staticmethod
+    def set_next_send(msg):
+        was_sent = bool(msg.last_sent)
+        if not was_sent:
+            msg.last_sent = datetime.now()
+        if msg.time_unit == 'M':
+            msg.next_send = (msg.last_sent + timedelta(days=31 * msg.time_count)) \
+                .replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        elif msg.time_unit == 'Y':
+            msg.next_send = (msg.last_sent + timedelta(days=366 * msg.time_count)) \
+                .replace(day=1, month=1, hour=0, minute=0, second=0, microsecond=0)
+        elif msg.time_unit == 'w':
+            msg.next_send = (msg.last_sent + timedelta(weeks=msg.time_count)).replace(microsecond=0)
+        elif msg.time_unit == 'd':
+            msg.next_send = (msg.last_sent + timedelta(days=msg.time_count)).replace(microsecond=0)
+        elif msg.time_unit == 'h':
+            msg.next_send = (msg.last_sent + timedelta(hours=msg.time_count)).replace(microsecond=0)
+        elif msg.time_unit == 'm':
+            msg.next_send = (msg.last_sent + timedelta(minutes=msg.time_count)).replace(microsecond=0)
+        if not was_sent:
+            msg.last_sent = None
