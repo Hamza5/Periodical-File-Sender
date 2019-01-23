@@ -36,6 +36,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             or self.removePushButton.setEnabled(bool(self.filesTableWidget.selectedIndexes()))
             or self.sendPushButton.setEnabled(bool(self.filesTableWidget.selectedIndexes()))
         )
+        self.filesTableWidget.itemSelectionChanged.connect(self.preview_email)
         self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
                                                self.usernameLineEdit.text(), self.passwordLineEdit.text(),
                                                self.tlsCheckBox.isChecked())
@@ -93,6 +94,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         email_dialog.accepted.connect(email_dialog_accepted)
         email_dialog.exec()
+
+    def preview_email(self):
+        if self.filesTableWidget.selectedIndexes():
+            selected_index = self.filesTableWidget.selectedIndexes()[0].row()
+            message = self.filesTableWidget.item(selected_index, 0).data
+            assert isinstance(message, EmailMessage)
+            self.emailGroupBox.setEnabled(True)
+            self.toLineEdit.setText(message['To'])
+            self.subjectLineEdit.setText(message['Subject'])
+            self.bodyPlainTextEdit.setPlainText(message.get_content())
+            self.attachmentLineEdit.setText(message.attachment_path)
+        else:
+            self.emailGroupBox.setEnabled(False)
+            self.toLineEdit.setText('')
+            self.subjectLineEdit.setText('')
+            self.bodyPlainTextEdit.setPlainText('')
+            self.attachmentLineEdit.setText('')
 
 
 app = QApplication(sys.argv)
