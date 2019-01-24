@@ -2,9 +2,9 @@ import sys
 from functools import partial
 from threading import Thread
 
-from PyQt5.QtCore import pyqtSlot, pyqtSignal
-from PyQt5.QtGui import QFont
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem, QFileDialog
+from PyQt5.QtCore import pyqtSlot, pyqtSignal, QRegExp
+from PyQt5.QtGui import QFont, QRegExpValidator
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem, QFileDialog, QMessageBox
 
 from GUI import Ui_MainWindow
 from email_dialog import Ui_AddEmailDialog
@@ -12,6 +12,7 @@ from scheduling import TimedEmailMessage, SendingTimeMonitor
 
 ITALIC_FONT = QFont()
 ITALIC_FONT.setItalic(True)
+EMAIL_REGEXP = QRegExp(r'.+@[\w-]+\.\w+')
 
 
 class DataQTableWidgetItem(QTableWidgetItem):
@@ -28,12 +29,19 @@ class EmailDialog(QDialog, Ui_AddEmailDialog):
         super().__init__(parent)
         self.setupUi(self)
         self.browsePushButton.clicked.connect(self.open_file_window)
+        self.toLineEdit.setValidator(QRegExpValidator(EMAIL_REGEXP))
         self.show()
 
     def open_file_window(self):
         path = QFileDialog.getOpenFileName(self, self.tr('Choose a file'))[0]
         if path:
             self.filePathLlineEdit.setText(path)
+
+    def accept(self):
+        if self.toLineEdit.hasAcceptableInput():
+            super().accept()
+        else:
+            QMessageBox.warning(self, self.tr('Error'), self.tr('The email address that you entered is invalid'))
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
