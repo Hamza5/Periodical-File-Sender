@@ -1,10 +1,17 @@
 import sys
+from functools import partial
+from threading import Thread
 
+from PyQt5.QtCore import pyqtSlot, pyqtSignal
+from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem
 
 from GUI import Ui_MainWindow
 from email_dialog import Ui_AddEmailDialog
-from scheduling import EmailMessage, SendingTimeMonitor
+from scheduling import TimedEmailMessage, SendingTimeMonitor
+
+ITALIC_FONT = QFont()
+ITALIC_FONT.setItalic(True)
 
 
 class DataQTableWidgetItem(QTableWidgetItem):
@@ -25,6 +32,8 @@ class EmailDialog(QDialog, Ui_AddEmailDialog):
 
 class MainWindow(QMainWindow, Ui_MainWindow):
 
+    email_sent = pyqtSignal(TimedEmailMessage)
+
     def __init__(self):
         super().__init__()
         self.setupUi(self)
@@ -37,10 +46,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             or self.sendPushButton.setEnabled(bool(self.filesTableWidget.selectedIndexes()))
         )
         self.filesTableWidget.itemSelectionChanged.connect(self.preview_email)
+        self.email_sent.connect(self.update_ui_after_send)
+        self.sendPushButton.clicked.connect(self.send_email)
+        self.showPasswordCheckBox.toggled.connect(lambda enabled:
+                                                  self.passwordLineEdit.setEchoMode(self.passwordLineEdit.Normal)
+                                                  if enabled else
+                                                  self.passwordLineEdit.setEchoMode(self.passwordLineEdit.Password))
         self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
                                                self.usernameLineEdit.text(), self.passwordLineEdit.text(),
                                                self.tlsCheckBox.isChecked())
         self.show()
+
+    def _recalculate_indices(self):
+        for i in range(self.filesTableWidget.rowCount()):
+            message = self.filesTableWidget.item(i, 0).data
+            assert isinstance(message, TimedEmailMessage)
+            message.index = i
 
     def _get_info_as_items(self, email_dialog):
         to = email_dialog.toLineEdit.text()
@@ -48,10 +69,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         content = email_dialog.bodyPlainTextEdit.toPlainText()
         attachment_path = email_dialog.filePathLlineEdit.text()
         sender = self.senderNameLineEdit.text() + ' <' + self.senderEmailLineEdit.text() + '>'
-        email_message = EmailMessage(sender, to, subject, content, attachment_path,
-                                     ['m', 'h', 'd', 'w', 'M', 'Y'][email_dialog.periodComboBox.currentIndex()],
-                                     email_dialog.periodSpinBox.value())
-        self.send_monitor.set_next_send(email_message)
+        email_message = TimedEmailMessage(sender, to, subject, content, attachment_path,
+                                          ['m', 'h', 'd', 'w', 'M', 'Y'][email_dialog.periodComboBox.currentIndex()],
+                                          email_dialog.periodSpinBox.value(), self)
         to_item = DataQTableWidgetItem(to)
         subject_item = DataQTableWidgetItem(subject, email_message)
         schedule_item = DataQTableWidgetItem(self.tr('Every') + ' ' + str(email_dialog.periodSpinBox.value()) + ' '
@@ -70,19 +90,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         email_dialog.accepted.connect(email_dialog_accepted)
         email_dialog.exec()
+        self._recalculate_indices()
 
     def remove_email_task(self):
         self.filesTableWidget.removeRow(self.filesTableWidget.selectedIndexes()[0].row())
+        self._recalculate_indices()
 
     def edit_email_task(self):
         email_dialog = EmailDialog(self)
         selected_index = self.filesTableWidget.selectedIndexes()[0].row()
         message = self.filesTableWidget.item(selected_index, 0).data
-        assert isinstance(message, EmailMessage)
+        assert isinstance(message, TimedEmailMessage)
         email_dialog.setWindowTitle(self.tr('Edit a task'))
         email_dialog.toLineEdit.setText(message['To'])
         email_dialog.subjectLineEdit.setText(message['Subject'])
-        email_dialog.bodyPlainTextEdit.setPlainText(message.get_content())
+        email_dialog.bodyPlainTextEdit.setPlainText(message.text)
         email_dialog.filePathLlineEdit.setText(message.attachment_path)
         email_dialog.periodSpinBox.setValue(message.time_count)
         email_dialog.periodComboBox.setCurrentIndex(['m', 'h', 'd', 'w', 'M', 'Y'].index(message.time_unit))
@@ -94,16 +116,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         email_dialog.accepted.connect(email_dialog_accepted)
         email_dialog.exec()
+        self._recalculate_indices()
 
     def preview_email(self):
         if self.filesTableWidget.selectedIndexes():
             selected_index = self.filesTableWidget.selectedIndexes()[0].row()
             message = self.filesTableWidget.item(selected_index, 0).data
-            assert isinstance(message, EmailMessage)
+            assert isinstance(message, TimedEmailMessage)
             self.emailGroupBox.setEnabled(True)
             self.toLineEdit.setText(message['To'])
             self.subjectLineEdit.setText(message['Subject'])
-            self.bodyPlainTextEdit.setPlainText(message.get_content())
+            self.bodyPlainTextEdit.setPlainText(message.text)
             self.attachmentLineEdit.setText(message.attachment_path)
         else:
             self.emailGroupBox.setEnabled(False)
@@ -111,6 +134,26 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.subjectLineEdit.setText('')
             self.bodyPlainTextEdit.setPlainText('')
             self.attachmentLineEdit.setText('')
+
+    def send_email(self):
+        selected_index = self.filesTableWidget.selectedIndexes()[0].row()
+        message = self.filesTableWidget.item(selected_index, 0).data
+        assert isinstance(message, TimedEmailMessage)
+        Thread(target=partial(message.send, server=self.serverAddressLineEdit.text(),
+                              port=self.serverPortSpinBox.value(), username=self.usernameLineEdit.text(),
+                              password=self.passwordLineEdit.text(), tls=self.tlsCheckBox.isChecked())).start()
+        self.sendPushButton.setEnabled(False)
+        self.sendPushButton.setFont(ITALIC_FONT)
+        self.statusbar.showMessage(self.tr('Sending a message...'), 3000)
+
+    @pyqtSlot(TimedEmailMessage)
+    def update_ui_after_send(self, message):
+        assert isinstance(message, TimedEmailMessage)
+        self.filesTableWidget.setItem(message.index, 3, DataQTableWidgetItem(str(message.last_sent)))
+        self.filesTableWidget.setItem(message.index, 4, DataQTableWidgetItem(str(message.next_send)))
+        self.sendPushButton.setFont(QFont())
+        self.sendPushButton.setEnabled(True)
+        self.statusbar.showMessage(self.tr('Message sent'), 3000)
 
 
 app = QApplication(sys.argv)
