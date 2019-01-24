@@ -4,7 +4,7 @@ from threading import Thread
 
 from PyQt5.QtCore import pyqtSlot, pyqtSignal
 from PyQt5.QtGui import QFont
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem, QFileDialog
 
 from GUI import Ui_MainWindow
 from email_dialog import Ui_AddEmailDialog
@@ -27,7 +27,13 @@ class EmailDialog(QDialog, Ui_AddEmailDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setupUi(self)
+        self.browsePushButton.clicked.connect(self.open_file_window)
         self.show()
+
+    def open_file_window(self):
+        path = QFileDialog.getOpenFileName(self, self.tr('Choose a file'))[0]
+        if path:
+            self.filePathLlineEdit.setText(path)
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
