@@ -1,4 +1,5 @@
 import sys
+from configparser import ConfigParser
 from functools import partial
 from threading import Thread
 
@@ -46,6 +47,8 @@ class EmailDialog(QDialog, Ui_AddEmailDialog):
 
 class MainWindow(QMainWindow, Ui_MainWindow):
 
+    SETTINGS_FILE_PATH = 'settings.ini'
+
     email_sent = pyqtSignal(TimedEmailMessage)
 
     def __init__(self):
@@ -67,9 +70,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                                                   if enabled else
                                                   self.passwordLineEdit.setEchoMode(self.passwordLineEdit.Password))
         self.tasksFilePushButton.clicked.connect(self.open_tasks_file_selection_window)
+        self.settingsButtonBox.clicked.connect(
+            lambda b: self.save_settings()
+            if self.settingsButtonBox.standardButton(b) == self.settingsButtonBox.Save
+            else self.load_settings()
+        )
         self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
                                                self.usernameLineEdit.text(), self.passwordLineEdit.text(),
                                                self.tlsCheckBox.isChecked())
+        self.load_settings()
         self.show()
 
     def _recalculate_indices(self):
@@ -174,6 +183,33 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         path = QFileDialog.getOpenFileName(self, self.tr('Choose a file'), filter=self.tr('PES task files (*.pes)'))[0]
         if path:
             self.tasksFileLineEdit.setText(path)
+
+    def load_settings(self):
+        try:
+            with open(self.SETTINGS_FILE_PATH) as settings_file:
+                settings_parser = ConfigParser()
+                settings_parser.read_file(settings_file)
+                self.serverAddressLineEdit.setText(settings_parser.get('Server', 'Address', fallback=''))
+                self.serverPortSpinBox.setValue(settings_parser.getint('Server', 'Port', fallback=465))
+                self.usernameLineEdit.setText(settings_parser.get('Server', 'Username', fallback=''))
+                self.passwordLineEdit.setText(settings_parser.get('Server', 'Password', fallback=''))
+                self.senderNameLineEdit.setText(settings_parser.get('Sender', 'Name', fallback=''))
+                self.senderEmailLineEdit.setText(settings_parser.get('Sender', 'EmailAddress', fallback=''))
+                self.tasksFileLineEdit.setText(settings_parser.get('Tasks', 'FilePath', fallback='send_tasks.pes'))
+        except FileNotFoundError:
+            pass
+
+    def save_settings(self):
+        settings_parser = ConfigParser()
+        settings_parser['Server'] = {'Address': self.serverAddressLineEdit.text(),
+                                     'Port': self.serverPortSpinBox.value(),
+                                     'Username': self.usernameLineEdit.text(),
+                                     'Password': self.passwordLineEdit.text()}
+        settings_parser['Sender'] = {'Name': self.senderNameLineEdit.text(),
+                                     'EmailAddress': self.senderEmailLineEdit.text()}
+        settings_parser['Tasks'] = {'FilePath': self.tasksFileLineEdit.text()}
+        with open(self.SETTINGS_FILE_PATH, 'w') as settings_file:
+            settings_parser.write(settings_file)
 
 
 app = QApplication(sys.argv)
