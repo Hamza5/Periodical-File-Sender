@@ -66,6 +66,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                                                   self.passwordLineEdit.setEchoMode(self.passwordLineEdit.Normal)
                                                   if enabled else
                                                   self.passwordLineEdit.setEchoMode(self.passwordLineEdit.Password))
+        self.tasksFilePushButton.clicked.connect(self.open_tasks_file_selection_window)
         self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
                                                self.usernameLineEdit.text(), self.passwordLineEdit.text(),
                                                self.tlsCheckBox.isChecked())
@@ -168,6 +169,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.sendPushButton.setFont(QFont())
         self.sendPushButton.setEnabled(True)
         self.statusbar.showMessage(self.tr('Message sent'), 3000)
+
+    def open_tasks_file_selection_window(self):
+        path = QFileDialog.getOpenFileName(self, self.tr('Choose a file'), filter=self.tr('PES task files (*.pes)'))[0]
+        if path:
+            self.tasksFileLineEdit.setText(path)
 
 
 app = QApplication(sys.argv)
