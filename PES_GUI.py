@@ -1,5 +1,7 @@
+import json
 import sys
 from configparser import ConfigParser
+from datetime import datetime
 from functools import partial
 from threading import Thread
 
@@ -50,6 +52,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     SETTINGS_FILE_PATH = 'settings.ini'
 
     email_sent = pyqtSignal(TimedEmailMessage)
+    tasks_changed = pyqtSignal()
+    settings_changed = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -75,6 +79,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if self.settingsButtonBox.standardButton(b) == self.settingsButtonBox.Save
             else self.load_settings()
         )
+        self.tasks_changed.connect(self._recalculate_indices)
+        self.tasks_changed.connect(self.save_tasks)
+        self.settings_changed.connect(self.load_tasks)
         self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
                                                self.usernameLineEdit.text(), self.passwordLineEdit.text(),
                                                self.tlsCheckBox.isChecked())
@@ -111,14 +118,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.filesTableWidget.insertRow(self.filesTableWidget.rowCount())
             for i, item in enumerate(items):
                 self.filesTableWidget.setItem(self.filesTableWidget.rowCount()-1, i, item)
+            self.tasks_changed.emit()
 
         email_dialog.accepted.connect(email_dialog_accepted)
         email_dialog.exec()
-        self._recalculate_indices()
 
     def remove_email_task(self):
         self.filesTableWidget.removeRow(self.filesTableWidget.selectedIndexes()[0].row())
-        self._recalculate_indices()
+        self.tasks_changed.emit()
 
     def edit_email_task(self):
         email_dialog = EmailDialog(self)
@@ -137,10 +144,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             items = self._get_info_as_items(email_dialog)
             for i, item in enumerate(items):
                 self.filesTableWidget.setItem(selected_index, i, item)
+            self.tasks_changed.emit()
 
         email_dialog.accepted.connect(email_dialog_accepted)
         email_dialog.exec()
-        self._recalculate_indices()
 
     def preview_email(self):
         if self.filesTableWidget.selectedIndexes():
@@ -178,9 +185,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.sendPushButton.setFont(QFont())
         self.sendPushButton.setEnabled(True)
         self.statusbar.showMessage(self.tr('Message sent'), 3000)
+        self.tasks_changed.emit()
 
     def open_tasks_file_selection_window(self):
-        path = QFileDialog.getOpenFileName(self, self.tr('Choose a file'), filter=self.tr('PES task files (*.pes)'))[0]
+        path = QFileDialog.getOpenFileName(self, self.tr('Choose a file'), filter=self.tr('Task files (*.json)'))[0]
         if path:
             self.tasksFileLineEdit.setText(path)
 
@@ -195,7 +203,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.passwordLineEdit.setText(settings_parser.get('Server', 'Password', fallback=''))
                 self.senderNameLineEdit.setText(settings_parser.get('Sender', 'Name', fallback=''))
                 self.senderEmailLineEdit.setText(settings_parser.get('Sender', 'EmailAddress', fallback=''))
-                self.tasksFileLineEdit.setText(settings_parser.get('Tasks', 'FilePath', fallback='send_tasks.pes'))
+                self.tasksFileLineEdit.setText(settings_parser.get('Tasks', 'FilePath', fallback='send_tasks.json'))
+                self.settings_changed.emit()
         except FileNotFoundError:
             pass
 
@@ -210,6 +219,57 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         settings_parser['Tasks'] = {'FilePath': self.tasksFileLineEdit.text()}
         with open(self.SETTINGS_FILE_PATH, 'w') as settings_file:
             settings_parser.write(settings_file)
+        self.settings_changed.emit()
+
+    def load_tasks(self):
+        path = self.tasksFileLineEdit.text()
+        if path:
+            try:
+                with open(path) as tasks_file:
+                    tasks_json = json.load(tasks_file)
+                    assert isinstance(tasks_json, list)
+                    self.filesTableWidget.clearContents()
+                    self.filesTableWidget.setRowCount(len(tasks_json))
+                    for i, task_json in enumerate(tasks_json):
+                        to = task_json['To']
+                        subject = task_json['Subject']
+                        text = task_json['Text']
+                        attachment = task_json['Attachment']
+                        time_unit = task_json['Time unit']
+                        time_count = task_json['Time count']
+                        last_run = task_json['Last run']
+                        next_run = task_json['Next run']
+                        message = TimedEmailMessage(to, self.senderEmailLineEdit.text(), subject, text, attachment,
+                                                    time_unit, time_count, self)
+                        message.index = i
+                        message.last_sent = datetime.fromtimestamp(last_run) if last_run else None
+                        message.next_send = datetime.fromtimestamp(next_run)
+                        for j, item in enumerate(
+                                [DataQTableWidgetItem(subject, message), DataQTableWidgetItem(to),
+                                 DataQTableWidgetItem(self.tr('Every') + ' ' + str(time_count) + ' ' +
+                                                      {'m': 'Minutes', 'h': 'Hours', 'd': 'Days',
+                                                       'w': 'Weeks', 'M': 'Months', 'Y': 'Years'}[time_unit]),
+                                 DataQTableWidgetItem(str(message.last_sent)) if last_run else DataQTableWidgetItem(),
+                                 DataQTableWidgetItem(str(message.next_send))]
+                        ):
+                            self.filesTableWidget.setItem(i, j, item)
+            except FileNotFoundError:
+                pass
+
+    def save_tasks(self):
+        tasks_json = []
+        for i in range(self.filesTableWidget.rowCount()):
+            message = self.filesTableWidget.item(i, 0).data
+            assert isinstance(message, TimedEmailMessage)
+            tasks_json.append({'To': message['To'], 'Subject': message['Subject'], 'Text': message.text,
+                               'Attachment': message.attachment_path, 'Time unit': message.time_unit,
+                               'Time count': message.time_count, 'Next run': int(message.next_send.timestamp()),
+                               'Last run': message.last_sent.timestamp() if message.last_sent else 0})
+        try:
+            with open(self.tasksFileLineEdit.text(), 'w') as tasks_file:
+                json.dump(tasks_json, tasks_file)
+        except OSError:
+            pass
 
 
 app = QApplication(sys.argv)
