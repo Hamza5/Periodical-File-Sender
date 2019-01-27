@@ -68,6 +68,8 @@ class TimedEmailMessage:
         assert isinstance(port, int)
         assert isinstance(username, str)
         assert isinstance(password, str)
+        if self.parent_gui is not None:
+            self.parent_gui.email_before_send.emit(self)
         self.message.clear_content()
         self.message.set_content(self.text)
         if self.attachment_path:
@@ -88,7 +90,7 @@ class TimedEmailMessage:
         self.last_sent = datetime.now().replace(microsecond=0)
         self.calculate_next_sending_time()
         if self.parent_gui is not None:
-            self.parent_gui.email_sent.emit(self)
+            self.parent_gui.email_after_send.emit(self)
 
     def calculate_next_sending_time(self):
         was_sent = bool(self.last_sent)

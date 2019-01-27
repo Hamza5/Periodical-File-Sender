@@ -5,7 +5,7 @@ from datetime import datetime
 from functools import partial
 from threading import Thread
 
-from PyQt5.QtCore import pyqtSlot, pyqtSignal, QRegExp
+from PyQt5.QtCore import pyqtSignal, QRegExp
 from PyQt5.QtGui import QFont, QRegExpValidator
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem, QFileDialog, QMessageBox
 
@@ -51,7 +51,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     SETTINGS_FILE_PATH = 'settings.ini'
 
-    email_sent = pyqtSignal(TimedEmailMessage)
+    email_before_send = pyqtSignal(TimedEmailMessage)
+    email_after_send = pyqtSignal(TimedEmailMessage)
     tasks_changed = pyqtSignal()
     settings_changed = pyqtSignal()
 
@@ -67,7 +68,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             or self.sendPushButton.setEnabled(bool(self.filesTableWidget.selectedIndexes()))
         )
         self.filesTableWidget.itemSelectionChanged.connect(self.preview_email)
-        self.email_sent.connect(self.update_ui_after_send)
+        self.email_before_send.connect(self.update_ui_before_send)
+        self.email_after_send.connect(self.update_ui_after_send)
         self.sendPushButton.clicked.connect(self.send_email)
         self.showPasswordCheckBox.toggled.connect(lambda enabled:
                                                   self.passwordLineEdit.setEchoMode(self.passwordLineEdit.Normal)
@@ -79,22 +81,34 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             if self.settingsButtonBox.standardButton(b) == self.settingsButtonBox.Save
             else self.load_settings()
         )
-        self.tasks_changed.connect(self._recalculate_indices)
+        self.tasks_changed.connect(self.reprocess_messages)
         self.tasks_changed.connect(self.save_tasks)
         self.settings_changed.connect(self.load_tasks)
+        self.settings_changed.connect(self.restart_sending_monitor)
         self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
                                                self.usernameLineEdit.text(), self.passwordLineEdit.text(),
                                                self.tlsCheckBox.isChecked())
         self.load_settings()
         self.show()
+        self.reprocess_messages()
 
-    def _recalculate_indices(self):
+    def restart_sending_monitor(self):
+        self.send_monitor.stop()
+        self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
+                                               self.usernameLineEdit.text(), self.passwordLineEdit.text(),
+                                               self.tlsCheckBox.isChecked())
+        self.send_monitor.start()
+
+    def reprocess_messages(self):
+        messages = []
         for i in range(self.filesTableWidget.rowCount()):
             message = self.filesTableWidget.item(i, 0).data
             assert isinstance(message, TimedEmailMessage)
             message.index = i
+            messages.append(message)
+        self.send_monitor.set_messages(messages)
 
-    def _get_info_as_items(self, email_dialog):
+    def get_info_as_items(self, email_dialog):
         to = email_dialog.toLineEdit.text()
         subject = email_dialog.subjectLineEdit.text()
         content = email_dialog.bodyPlainTextEdit.toPlainText()
@@ -114,7 +128,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         email_dialog = EmailDialog(self)
 
         def email_dialog_accepted():
-            items = self._get_info_as_items(email_dialog)
+            items = self.get_info_as_items(email_dialog)
             self.filesTableWidget.insertRow(self.filesTableWidget.rowCount())
             for i, item in enumerate(items):
                 self.filesTableWidget.setItem(self.filesTableWidget.rowCount()-1, i, item)
@@ -141,7 +155,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         email_dialog.periodComboBox.setCurrentIndex(['m', 'h', 'd', 'w', 'M', 'Y'].index(message.time_unit))
 
         def email_dialog_accepted():
-            items = self._get_info_as_items(email_dialog)
+            items = self.get_info_as_items(email_dialog)
             for i, item in enumerate(items):
                 self.filesTableWidget.setItem(selected_index, i, item)
             self.tasks_changed.emit()
@@ -173,11 +187,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         Thread(target=partial(message.send, server=self.serverAddressLineEdit.text(),
                               port=self.serverPortSpinBox.value(), username=self.usernameLineEdit.text(),
                               password=self.passwordLineEdit.text(), tls=self.tlsCheckBox.isChecked())).start()
+
+    def update_ui_before_send(self, message):
+        assert isinstance(message, TimedEmailMessage)
         self.sendPushButton.setEnabled(False)
         self.sendPushButton.setFont(ITALIC_FONT)
         self.statusbar.showMessage(self.tr('Sending a message...'), 3000)
 
-    @pyqtSlot(TimedEmailMessage)
     def update_ui_after_send(self, message):
         assert isinstance(message, TimedEmailMessage)
         self.filesTableWidget.setItem(message.index, 3, DataQTableWidgetItem(str(message.last_sent)))
@@ -270,6 +286,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 json.dump(tasks_json, tasks_file)
         except OSError:
             pass
+
+    def closeEvent(self, event):
+        self.send_monitor.stop()
+        event.accept()
 
 
 app = QApplication(sys.argv)
