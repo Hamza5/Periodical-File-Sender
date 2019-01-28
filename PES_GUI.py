@@ -7,7 +7,7 @@ from threading import Thread
 
 from PyQt5.QtCore import pyqtSignal, QRegExp
 from PyQt5.QtGui import QFont, QRegExpValidator
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem, QFileDialog, QMessageBox, QLabel
 
 from GUI import Ui_MainWindow
 from email_dialog import Ui_AddEmailDialog
@@ -59,6 +59,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
+        self.statusLabel = QLabel(self.tr('Monitoring'))
+        self.statusbar.addPermanentWidget(self.statusLabel)
         self.addPushButton.clicked.connect(self.add_email_task)
         self.editPushButton.clicked.connect(self.edit_email_task)
         self.removePushButton.clicked.connect(self.remove_email_task)
@@ -192,7 +194,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         assert isinstance(message, TimedEmailMessage)
         self.sendPushButton.setEnabled(False)
         self.sendPushButton.setFont(ITALIC_FONT)
-        self.statusbar.showMessage(self.tr('Sending a message...'), 3000)
+        self.statusLabel.setText(self.tr('Sending a message...'))
 
     def update_ui_after_send(self, message):
         assert isinstance(message, TimedEmailMessage)
@@ -201,6 +203,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.sendPushButton.setFont(QFont())
         self.sendPushButton.setEnabled(True)
         self.statusbar.showMessage(self.tr('Message sent'), 3000)
+        self.statusLabel.setText(self.tr('Monitoring'))
         self.tasks_changed.emit()
 
     def open_tasks_file_selection_window(self):
@@ -222,7 +225,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.tasksFileLineEdit.setText(settings_parser.get('Tasks', 'FilePath', fallback='send_tasks.json'))
                 self.settings_changed.emit()
         except FileNotFoundError:
-            pass
+            self.tabWidget.setCurrentIndex(1)
 
     def save_settings(self):
         settings_parser = ConfigParser()
