@@ -1,5 +1,6 @@
 import json
 import sys
+import traceback as tb
 from configparser import ConfigParser
 from datetime import datetime
 from functools import partial
@@ -295,6 +296,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         event.accept()
 
 
+def exception_handler(etype, value, traceback):
+    error_dialog = QMessageBox(QMessageBox.Critical, window.tr('Unexpected error'),
+                               str(' : '.join((str(etype), str(value)))), parent=window)
+    error_dialog.setDetailedText(''.join(tb.format_exception(etype, value, traceback)))
+    error_dialog.exec()
+
+
 app = QApplication(sys.argv)
 window = MainWindow()
+sys.excepthook = exception_handler
 sys.exit(app.exec())
