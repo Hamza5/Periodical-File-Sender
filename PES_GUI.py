@@ -60,6 +60,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
+        self.senderEmailLineEdit.setValidator(QRegExpValidator(EMAIL_REGEXP))
         self.statusLabel = QLabel(self.tr('Monitoring'))
         self.statusbar.addPermanentWidget(self.statusLabel)
         self.addPushButton.clicked.connect(self.add_email_task)
@@ -128,6 +129,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 DataQTableWidgetItem(str(email_message.next_send))]
 
     def add_email_task(self):
+        if not self.senderEmailLineEdit.hasAcceptableInput():
+            QMessageBox.warning(self, self.tr('Error'),
+                                self.tr('The email address of the sender in the settings is not valid!'))
+            self.tabWidget.setCurrentIndex(1)
+            self.senderEmailLineEdit.setFocus()
+            return
         email_dialog = EmailDialog(self)
 
         def email_dialog_accepted():
@@ -145,6 +152,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.tasks_changed.emit()
 
     def edit_email_task(self):
+        if not self.senderEmailLineEdit.hasAcceptableInput():
+            QMessageBox.warning(self, self.tr('Error'),
+                                self.tr('The email address of the sender in the settings is not valid!'))
+            self.tabWidget.setCurrentIndex(1)
+            self.senderEmailLineEdit.setFocus()
+            return
         email_dialog = EmailDialog(self)
         selected_index = self.filesTableWidget.selectedIndexes()[0].row()
         message = self.filesTableWidget.item(selected_index, 0).data
