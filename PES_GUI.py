@@ -1,10 +1,12 @@
 import json
 import sys
 import traceback as tb
+import types
 from configparser import ConfigParser
 from datetime import datetime
 from functools import partial
-from threading import Thread
+from smtplib import SMTPAuthenticationError, SMTPConnectError, SMTPServerDisconnected, SMTPNotSupportedError, \
+    SMTPSenderRefused, SMTPDataError, SMTPRecipientsRefused, SMTPException
 
 from PyQt5.QtCore import pyqtSignal, QRegExp
 from PyQt5.QtGui import QFont, QRegExpValidator
@@ -12,6 +14,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem
 
 from GUI import Ui_MainWindow
 from email_dialog import Ui_AddEmailDialog
+from fixed_thread import Thread
 from scheduling import TimedEmailMessage, SendingTimeMonitor
 
 ITALIC_FONT = QFont()
@@ -51,17 +54,23 @@ class EmailDialog(QDialog, Ui_AddEmailDialog):
 class MainWindow(QMainWindow, Ui_MainWindow):
 
     SETTINGS_FILE_PATH = 'settings.ini'
+    MONITORING_FORMAT = '<b>{}</b>'
+    SCHEDULE_ITEM_FORMAT = '{} {} {}'
+    INVALID_SENDER_EMAIL_TEXT = 'The email address of the sender in the settings is not valid!'
+    SHOW_MESSAGE_TIMEOUT = 3000
 
     email_before_send = pyqtSignal(TimedEmailMessage)
     email_after_send = pyqtSignal(TimedEmailMessage)
     tasks_changed = pyqtSignal()
     settings_changed = pyqtSignal()
+    exception_happened = pyqtSignal(type, Exception, types.TracebackType)
 
     def __init__(self):
         super().__init__()
         self.setupUi(self)
+        self.exception_happened.connect(self.handle_exception)
         self.senderEmailLineEdit.setValidator(QRegExpValidator(EMAIL_REGEXP))
-        self.statusLabel = QLabel(self.tr('Monitoring'))
+        self.statusLabel = QLabel(self.MONITORING_FORMAT.format(self.tr('Not monitoring')))
         self.statusbar.addPermanentWidget(self.statusLabel)
         self.addPushButton.clicked.connect(self.add_email_task)
         self.editPushButton.clicked.connect(self.edit_email_task)
@@ -96,12 +105,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.show()
         self.reprocess_messages()
 
-    def restart_sending_monitor(self):
-        self.send_monitor.stop()
+    def start_sending_monitor(self):
         self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
                                                self.usernameLineEdit.text(), self.passwordLineEdit.text(),
                                                self.tlsCheckBox.isChecked())
         self.send_monitor.start()
+        self.statusLabel.setText(self.MONITORING_FORMAT.format('<i>' + self.tr('Monitoring') + '</i>'))
+
+    def stop_sending_monitor(self):
+        self.send_monitor.stop()
+        self.statusLabel.setText(self.MONITORING_FORMAT.format(self.tr('Not monitoring')))
+
+    def restart_sending_monitor(self):
+        self.stop_sending_monitor()
+        self.start_sending_monitor()
 
     def reprocess_messages(self):
         messages = []
@@ -110,7 +127,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             assert isinstance(message, TimedEmailMessage)
             message.index = i
             messages.append(message)
-        self.send_monitor.set_messages(messages)
+        if len(messages) > 0:
+            self.restart_sending_monitor()
+            self.send_monitor.set_messages(messages)
+        else:
+            self.stop_sending_monitor()
 
     def get_info_as_items(self, email_dialog):
         to = email_dialog.toLineEdit.text()
@@ -123,15 +144,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                                           email_dialog.periodSpinBox.value(), self)
         to_item = DataQTableWidgetItem(to)
         subject_item = DataQTableWidgetItem(subject, email_message)
-        schedule_item = DataQTableWidgetItem(self.tr('Every') + ' ' + str(email_dialog.periodSpinBox.value()) + ' '
-                                             + email_dialog.periodComboBox.currentText())
+        schedule_item = DataQTableWidgetItem(self.SCHEDULE_ITEM_FORMAT.format(
+            self.tr('Every'), email_dialog.periodSpinBox.value(), email_dialog.periodComboBox.currentText()))
         return [subject_item, to_item, schedule_item, DataQTableWidgetItem(),
                 DataQTableWidgetItem(str(email_message.next_send))]
 
     def add_email_task(self):
         if not self.senderEmailLineEdit.hasAcceptableInput():
             QMessageBox.warning(self, self.tr('Error'),
-                                self.tr('The email address of the sender in the settings is not valid!'))
+                                self.tr(self.INVALID_SENDER_EMAIL_TEXT))
             self.tabWidget.setCurrentIndex(1)
             self.senderEmailLineEdit.setFocus()
             return
@@ -154,7 +175,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def edit_email_task(self):
         if not self.senderEmailLineEdit.hasAcceptableInput():
             QMessageBox.warning(self, self.tr('Error'),
-                                self.tr('The email address of the sender in the settings is not valid!'))
+                                self.tr(self.INVALID_SENDER_EMAIL_TEXT))
             self.tabWidget.setCurrentIndex(1)
             self.senderEmailLineEdit.setFocus()
             return
@@ -206,18 +227,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def update_ui_before_send(self, message):
         assert isinstance(message, TimedEmailMessage)
-        self.sendPushButton.setEnabled(False)
-        self.sendPushButton.setFont(ITALIC_FONT)
-        self.statusLabel.setText(self.tr('Sending a message...'))
+        self.statusbar.showMessage(self.tr('Sending a message...'), self.SHOW_MESSAGE_TIMEOUT)
 
     def update_ui_after_send(self, message):
         assert isinstance(message, TimedEmailMessage)
         self.filesTableWidget.setItem(message.index, 3, DataQTableWidgetItem(str(message.last_sent)))
         self.filesTableWidget.setItem(message.index, 4, DataQTableWidgetItem(str(message.next_send)))
-        self.sendPushButton.setFont(QFont())
-        self.sendPushButton.setEnabled(True)
-        self.statusbar.showMessage(self.tr('Message sent'), 3000)
-        self.statusLabel.setText(self.tr('Monitoring'))
+        self.statusbar.showMessage(self.tr('Message sent'), self.SHOW_MESSAGE_TIMEOUT)
         self.tasks_changed.emit()
 
     def open_tasks_file_selection_window(self):
@@ -286,6 +302,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                                  DataQTableWidgetItem(str(message.next_send))]
                         ):
                             self.filesTableWidget.setItem(i, j, item)
+                self.tasks_changed.emit()
             except FileNotFoundError:
                 pass
 
@@ -300,7 +317,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                                'Last run': message.last_sent.timestamp() if message.last_sent else 0})
         try:
             with open(self.tasksFileLineEdit.text(), 'w') as tasks_file:
-                json.dump(tasks_json, tasks_file)
+                json.dump(tasks_json, tasks_file, indent=4)
         except OSError:
             pass
 
@@ -308,12 +325,58 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.send_monitor.stop()
         event.accept()
 
+    def handle_exception(self, etype, value, traceback):
+        title = self.tr('Unexpected error')
+        text = str(' : '.join((etype.__name__, str(value))))
+        icon = QMessageBox.Critical
+        details = ''.join(tb.format_exception(etype, value, traceback))
+        if isinstance(value, SMTPAuthenticationError):
+            title = self.tr('Login error')
+            text = self.tr('Invalid username or password!')
+            icon = QMessageBox.Warning
+            details = str(value.smtp_error)
+        elif isinstance(value, (SMTPConnectError, SMTPServerDisconnected)):
+            title = self.tr('Connection error')
+            text = self.tr('Can not connect to the SMTP server!')
+            icon = QMessageBox.Warning
+            details = str(value.smtp_error)
+        elif isinstance(value, SMTPNotSupportedError):
+            title = self.tr('Server error')
+            text = self.tr('The server does not support the SMTP protocol!')
+            icon = QMessageBox.Warning
+            details = str(value)
+        elif isinstance(value, SMTPSenderRefused):
+            title = self.tr('Sender email error')
+            text = self.tr('The server refused your email address ({})!'.format(value.sender))
+            icon = QMessageBox.Warning
+            details = str(value.smtp_error)
+        elif isinstance(value, SMTPDataError):
+            title = self.tr('Data error')
+            text = self.tr('The server refused the content of the email message!')
+            icon = QMessageBox.Warning
+            details = str(value.smtp_error)
+        elif isinstance(value, SMTPRecipientsRefused):
+            title = self.tr('Recipient error')
+            text = self.tr('The server refused the email of the recipient!')
+            icon = QMessageBox.Warning
+            details = str(value.recipients)
+        elif isinstance(value, SMTPException):
+            title = self.tr('SMTP error')
+            text = self.tr('An SMTP error happened!')
+            icon = QMessageBox.Warning
+            details = str(value)
+        elif isinstance(value, FileNotFoundError):
+            title = self.tr('File not found')
+            text = self.tr('The file "{}" can not be found!'.format(value.filename))
+            icon = QMessageBox.Warning
+            details = str(value)
+        error_dialog = QMessageBox(icon, title, text, parent=self)
+        error_dialog.setDetailedText(details)
+        error_dialog.exec()
+
 
 def exception_handler(etype, value, traceback):
-    error_dialog = QMessageBox(QMessageBox.Critical, window.tr('Unexpected error'),
-                               str(' : '.join((str(etype), str(value)))), parent=window)
-    error_dialog.setDetailedText(''.join(tb.format_exception(etype, value, traceback)))
-    error_dialog.exec()
+    window.exception_happened.emit(etype, value, traceback)
 
 
 app = QApplication(sys.argv)

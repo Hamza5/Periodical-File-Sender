@@ -1,9 +1,10 @@
 from collections import Iterable
 from datetime import datetime
-from threading import Thread, Event, Lock
+from threading import Event, Lock
 from time import sleep
 
 from email_message import TimedEmailMessage
+from fixed_thread import Thread
 
 MONITORING_FREQUENCY = 1
 
