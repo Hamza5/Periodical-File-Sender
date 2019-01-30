@@ -7,19 +7,31 @@ from datetime import datetime
 from functools import partial
 from smtplib import SMTPAuthenticationError, SMTPConnectError, SMTPServerDisconnected, SMTPNotSupportedError, \
     SMTPSenderRefused, SMTPDataError, SMTPRecipientsRefused, SMTPException
+from threading import Thread
 
 from PyQt5.QtCore import pyqtSignal, QRegExp
 from PyQt5.QtGui import QFont, QRegExpValidator
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem, QFileDialog, QMessageBox, QLabel
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem, QFileDialog, QMessageBox, QPushButton
 
 from GUI import Ui_MainWindow
 from email_dialog import Ui_AddEmailDialog
-from fixed_thread import Thread
 from scheduling import TimedEmailMessage, SendingTimeMonitor
 
-ITALIC_FONT = QFont()
-ITALIC_FONT.setItalic(True)
 EMAIL_REGEXP = QRegExp(r'.+@[\w-]+\.\w+')
+
+# Workaround for thread exceptions bug
+old_run = Thread.run
+
+
+def run(*args, **kwargs):
+    try:
+        old_run(*args, **kwargs)
+    except Exception:
+        sys.excepthook(*sys.exc_info())
+
+
+Thread.run = run
+#####################################
 
 
 class DataQTableWidgetItem(QTableWidgetItem):
@@ -54,7 +66,6 @@ class EmailDialog(QDialog, Ui_AddEmailDialog):
 class MainWindow(QMainWindow, Ui_MainWindow):
 
     SETTINGS_FILE_PATH = 'settings.ini'
-    MONITORING_FORMAT = '<b>{}</b>'
     SCHEDULE_ITEM_FORMAT = '{} {} {}'
     INVALID_SENDER_EMAIL_TEXT = 'The email address of the sender in the settings is not valid!'
     SHOW_MESSAGE_TIMEOUT = 3000
@@ -68,10 +79,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
+        self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
+                                               self.usernameLineEdit.text(), self.passwordLineEdit.text(),
+                                               self.tlsCheckBox.isChecked())
         self.exception_happened.connect(self.handle_exception)
         self.senderEmailLineEdit.setValidator(QRegExpValidator(EMAIL_REGEXP))
-        self.statusLabel = QLabel(self.MONITORING_FORMAT.format(self.tr('Not monitoring')))
-        self.statusbar.addPermanentWidget(self.statusLabel)
+        self.monitoringButton = QPushButton(self.tr('Not monitoring'), self)
+        self.monitoringButton.setCheckable(True)
+        self.monitoringButton.toggled.connect(self.monitoring_button_state_changed)
+        self.statusbar.addPermanentWidget(self.monitoringButton)
         self.addPushButton.clicked.connect(self.add_email_task)
         self.editPushButton.clicked.connect(self.edit_email_task)
         self.removePushButton.clicked.connect(self.remove_email_task)
@@ -97,28 +113,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.tasks_changed.connect(self.reprocess_messages)
         self.tasks_changed.connect(self.save_tasks)
         self.settings_changed.connect(self.load_tasks)
-        self.settings_changed.connect(self.restart_sending_monitor)
-        self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
-                                               self.usernameLineEdit.text(), self.passwordLineEdit.text(),
-                                               self.tlsCheckBox.isChecked())
         self.load_settings()
         self.show()
         self.reprocess_messages()
 
-    def start_sending_monitor(self):
-        self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
-                                               self.usernameLineEdit.text(), self.passwordLineEdit.text(),
-                                               self.tlsCheckBox.isChecked())
-        self.send_monitor.start()
-        self.statusLabel.setText(self.MONITORING_FORMAT.format('<i>' + self.tr('Monitoring') + '</i>'))
-
-    def stop_sending_monitor(self):
-        self.send_monitor.stop()
-        self.statusLabel.setText(self.MONITORING_FORMAT.format(self.tr('Not monitoring')))
-
-    def restart_sending_monitor(self):
-        self.stop_sending_monitor()
-        self.start_sending_monitor()
+    def monitoring_button_state_changed(self, checked):
+        if checked:
+            self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
+                                                   self.usernameLineEdit.text(), self.passwordLineEdit.text(),
+                                                   self.tlsCheckBox.isChecked())
+            self.send_monitor.start()
+            self.monitoringButton.setText(self.tr('Monitoring'))
+            italic_bold = QFont()
+            italic_bold.setItalic(True)
+            italic_bold.setBold(True)
+            self.monitoringButton.setFont(italic_bold)
+        else:
+            self.send_monitor.stop()
+            self.monitoringButton.setText(self.tr('Not monitoring'))
+            self.monitoringButton.setFont(QFont())
 
     def reprocess_messages(self):
         messages = []
@@ -127,11 +140,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             assert isinstance(message, TimedEmailMessage)
             message.index = i
             messages.append(message)
-        if len(messages) > 0:
-            self.restart_sending_monitor()
-            self.send_monitor.set_messages(messages)
-        else:
-            self.stop_sending_monitor()
+        self.monitoringButton.setChecked(len(messages) > 0)
+        self.send_monitor.set_messages(messages)
 
     def get_info_as_items(self, email_dialog):
         to = email_dialog.toLineEdit.text()
@@ -322,7 +332,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             pass
 
     def closeEvent(self, event):
-        self.send_monitor.stop()
+        self.monitoringButton.setChecked(False)
         event.accept()
 
     def handle_exception(self, etype, value, traceback):

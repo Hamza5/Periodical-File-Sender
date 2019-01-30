@@ -1,10 +1,10 @@
+import sys
 from collections import Iterable
 from datetime import datetime
-from threading import Event, Lock
+from threading import Event, Lock, Thread
 from time import sleep
 
 from email_message import TimedEmailMessage
-from fixed_thread import Thread
 
 MONITORING_FREQUENCY = 1
 
@@ -51,9 +51,12 @@ class SendingTimeMonitor(Thread):
         self.stopped.set()
 
     def run(self):
-        while not self.stopped.is_set():
-            sleep(MONITORING_FREQUENCY)
-            for msg in self.get_ready_messages():
-                assert isinstance(msg, TimedEmailMessage)
-                msg.send(self.server_address, self.server_port, self.username, self.password, self.tls)
-                msg.calculate_next_sending_time()
+        try:
+            while not self.stopped.is_set():
+                sleep(MONITORING_FREQUENCY)
+                for msg in self.get_ready_messages():
+                    assert isinstance(msg, TimedEmailMessage)
+                    msg.send(self.server_address, self.server_port, self.username, self.password, self.tls)
+                    msg.calculate_next_sending_time()
+        except Exception:
+            sys.excepthook(*sys.exc_info())
