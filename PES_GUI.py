@@ -7,7 +7,7 @@ from datetime import datetime
 from functools import partial
 from smtplib import SMTPAuthenticationError, SMTPConnectError, SMTPServerDisconnected, SMTPNotSupportedError, \
     SMTPSenderRefused, SMTPDataError, SMTPRecipientsRefused, SMTPException
-from threading import Thread
+from threading import Thread, Lock
 
 from PyQt5.QtCore import pyqtSignal, QRegExp
 from PyQt5.QtGui import QFont, QRegExpValidator
@@ -60,7 +60,7 @@ class EmailDialog(QDialog, Ui_AddEmailDialog):
         if self.toLineEdit.hasAcceptableInput():
             super().accept()
         else:
-            QMessageBox.warning(self, self.tr('Error'), self.tr('The email address that you entered is invalid'))
+            QMessageBox.warning(self, self.tr('Error'), self.tr('The email address that you entered is invalid!'))
 
 
 class MainWindow(QMainWindow, Ui_MainWindow):
@@ -79,9 +79,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
+        self.emails_lock = Lock()
         self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
                                                self.usernameLineEdit.text(), self.passwordLineEdit.text(),
-                                               self.tlsCheckBox.isChecked())
+                                               self.tlsCheckBox.isChecked(), self)
         self.exception_happened.connect(self.handle_exception)
         self.senderEmailLineEdit.setValidator(QRegExpValidator(EMAIL_REGEXP))
         self.monitoringButton = QPushButton(self.tr('Not monitoring'), self)
@@ -117,11 +118,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.show()
         self.reprocess_messages()
 
+    def get_messages(self):
+        messages = []
+        self.emails_lock.acquire()
+        for i in range(self.filesTableWidget.rowCount()):
+            message = self.filesTableWidget.item(i, 0).data
+            assert isinstance(message, TimedEmailMessage)
+            message.index = i
+            messages.append(message)
+        self.emails_lock.release()
+        return messages
+
     def monitoring_button_state_changed(self, checked):
         if checked:
             self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
                                                    self.usernameLineEdit.text(), self.passwordLineEdit.text(),
-                                                   self.tlsCheckBox.isChecked())
+                                                   self.tlsCheckBox.isChecked(), self)
             self.send_monitor.start()
             self.monitoringButton.setText(self.tr('Monitoring'))
             italic_bold = QFont()
@@ -135,13 +147,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def reprocess_messages(self):
         messages = []
+        self.emails_lock.acquire()
         for i in range(self.filesTableWidget.rowCount()):
             message = self.filesTableWidget.item(i, 0).data
             assert isinstance(message, TimedEmailMessage)
             message.index = i
             messages.append(message)
+        self.emails_lock.release()
         self.monitoringButton.setChecked(len(messages) > 0)
-        self.send_monitor.set_messages(messages)
 
     def get_info_as_items(self, email_dialog):
         to = email_dialog.toLineEdit.text()
@@ -170,16 +183,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         def email_dialog_accepted():
             items = self.get_info_as_items(email_dialog)
+            self.emails_lock.acquire()
             self.filesTableWidget.insertRow(self.filesTableWidget.rowCount())
             for i, item in enumerate(items):
                 self.filesTableWidget.setItem(self.filesTableWidget.rowCount()-1, i, item)
+            self.emails_lock.release()
             self.tasks_changed.emit()
 
         email_dialog.accepted.connect(email_dialog_accepted)
         email_dialog.exec()
 
     def remove_email_task(self):
+        self.emails_lock.acquire()
         self.filesTableWidget.removeRow(self.filesTableWidget.selectedIndexes()[0].row())
+        self.emails_lock.release()
         self.tasks_changed.emit()
 
     def edit_email_task(self):
@@ -191,6 +208,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return
         email_dialog = EmailDialog(self)
         selected_index = self.filesTableWidget.selectedIndexes()[0].row()
+        self.emails_lock.acquire()
         message = self.filesTableWidget.item(selected_index, 0).data
         assert isinstance(message, TimedEmailMessage)
         email_dialog.setWindowTitle(self.tr('Edit a task'))
@@ -200,11 +218,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         email_dialog.filePathLlineEdit.setText(message.attachment_path)
         email_dialog.periodSpinBox.setValue(message.time_count)
         email_dialog.periodComboBox.setCurrentIndex(['m', 'h', 'd', 'w', 'M', 'Y'].index(message.time_unit))
+        self.emails_lock.release()
 
         def email_dialog_accepted():
             items = self.get_info_as_items(email_dialog)
+            self.emails_lock.acquire()
             for i, item in enumerate(items):
                 self.filesTableWidget.setItem(selected_index, i, item)
+            self.emails_lock.release()
             self.tasks_changed.emit()
 
         email_dialog.accepted.connect(email_dialog_accepted)
@@ -213,6 +234,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def preview_email(self):
         if self.filesTableWidget.selectedIndexes():
             selected_index = self.filesTableWidget.selectedIndexes()[0].row()
+            self.emails_lock.acquire()
             message = self.filesTableWidget.item(selected_index, 0).data
             assert isinstance(message, TimedEmailMessage)
             self.emailGroupBox.setEnabled(True)
@@ -220,6 +242,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.subjectLineEdit.setText(message['Subject'])
             self.bodyPlainTextEdit.setPlainText(message.text)
             self.attachmentLineEdit.setText(message.attachment_path)
+            self.emails_lock.release()
         else:
             self.emailGroupBox.setEnabled(False)
             self.toLineEdit.setText('')
@@ -229,11 +252,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def send_email(self):
         selected_index = self.filesTableWidget.selectedIndexes()[0].row()
+        self.emails_lock.acquire()
         message = self.filesTableWidget.item(selected_index, 0).data
         assert isinstance(message, TimedEmailMessage)
         Thread(target=partial(message.send, server=self.serverAddressLineEdit.text(),
                               port=self.serverPortSpinBox.value(), username=self.usernameLineEdit.text(),
                               password=self.passwordLineEdit.text(), tls=self.tlsCheckBox.isChecked())).start()
+        self.emails_lock.release()
 
     def update_ui_before_send(self, message):
         assert isinstance(message, TimedEmailMessage)
@@ -241,8 +266,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def update_ui_after_send(self, message):
         assert isinstance(message, TimedEmailMessage)
+        self.emails_lock.acquire()
         self.filesTableWidget.setItem(message.index, 3, DataQTableWidgetItem(str(message.last_sent)))
         self.filesTableWidget.setItem(message.index, 4, DataQTableWidgetItem(str(message.next_send)))
+        self.emails_lock.release()
         self.statusbar.showMessage(self.tr('Message sent'), self.SHOW_MESSAGE_TIMEOUT)
         self.tasks_changed.emit()
 
@@ -287,6 +314,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 with open(path) as tasks_file:
                     tasks_json = json.load(tasks_file)
                     assert isinstance(tasks_json, list)
+                    self.emails_lock.acquire()
                     self.filesTableWidget.clearContents()
                     self.filesTableWidget.setRowCount(len(tasks_json))
                     for i, task_json in enumerate(tasks_json):
@@ -298,7 +326,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                         time_count = task_json['Time count']
                         last_run = task_json['Last run']
                         next_run = task_json['Next run']
-                        message = TimedEmailMessage(to, self.senderEmailLineEdit.text(), subject, text, attachment,
+                        message = TimedEmailMessage(self.senderEmailLineEdit.text(), to, subject, text, attachment,
                                                     time_unit, time_count, self)
                         message.index = i
                         message.last_sent = datetime.fromtimestamp(last_run) if last_run else None
@@ -312,19 +340,22 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                                  DataQTableWidgetItem(str(message.next_send))]
                         ):
                             self.filesTableWidget.setItem(i, j, item)
+                    self.emails_lock.release()
                 self.tasks_changed.emit()
             except FileNotFoundError:
                 pass
 
     def save_tasks(self):
         tasks_json = []
+        self.emails_lock.acquire()
         for i in range(self.filesTableWidget.rowCount()):
             message = self.filesTableWidget.item(i, 0).data
             assert isinstance(message, TimedEmailMessage)
             tasks_json.append({'To': message['To'], 'Subject': message['Subject'], 'Text': message.text,
                                'Attachment': message.attachment_path, 'Time unit': message.time_unit,
                                'Time count': message.time_count, 'Next run': int(message.next_send.timestamp()),
-                               'Last run': message.last_sent.timestamp() if message.last_sent else 0})
+                               'Last run': int(message.last_sent.timestamp()) if message.last_sent else 0})
+        self.emails_lock.release()
         try:
             with open(self.tasksFileLineEdit.text(), 'w') as tasks_file:
                 json.dump(tasks_json, tasks_file, indent=4)
