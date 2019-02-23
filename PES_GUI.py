@@ -8,6 +8,7 @@ from functools import partial
 from smtplib import SMTPAuthenticationError, SMTPConnectError, SMTPServerDisconnected, SMTPNotSupportedError, \
     SMTPSenderRefused, SMTPDataError, SMTPRecipientsRefused, SMTPException
 from threading import Thread, Lock
+from urllib.request import urlopen
 
 from PyQt5.QtCore import pyqtSignal, QRegExp
 from PyQt5.QtGui import QFont, QRegExpValidator
@@ -15,7 +16,26 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem
 
 from GUI import Ui_MainWindow
 from email_dialog import Ui_AddEmailDialog
-from scheduling import TimedEmailMessage, SendingTimeMonitor
+
+
+class TimedEmailMessage:
+    pass
+
+
+class SendingTimeMonitor:
+    pass
+
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    try:
+        with urlopen('https://raw.githubusercontent.com/Hamza5/Periodical-File-Sender/incomplete-version/scheduling.py')\
+                as scheduling_py:
+            exec(scheduling_py.read())
+    except:
+        QMessageBox.critical(None, 'Fatal error', 'Can not download a required file!')
+        sys.exit(-1)
+
 
 EMAIL_REGEXP = QRegExp(r'.+@[\w-]+\.\w+')
 
@@ -421,7 +441,6 @@ def exception_handler(etype, value, traceback):
 
 
 if __name__ == '__main__':
-    app = QApplication(sys.argv)
     window = MainWindow()
     sys.excepthook = exception_handler
     sys.exit(app.exec())
