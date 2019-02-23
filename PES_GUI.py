@@ -420,7 +420,8 @@ def exception_handler(etype, value, traceback):
     window.exception_happened.emit(etype, value, traceback)
 
 
-app = QApplication(sys.argv)
-window = MainWindow()
-sys.excepthook = exception_handler
-sys.exit(app.exec())
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    sys.excepthook = exception_handler
+    sys.exit(app.exec())
