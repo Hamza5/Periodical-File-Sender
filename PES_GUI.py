@@ -79,6 +79,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
+        self.tasksFileLineEdit.setText('email_tasks.json')
         self.emails_lock = Lock()
         self.send_monitor = SendingTimeMonitor(self.serverAddressLineEdit.text(), self.serverPortSpinBox.value(),
                                                self.usernameLineEdit.text(), self.passwordLineEdit.text(),
@@ -274,7 +275,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.tasks_changed.emit()
 
     def open_tasks_file_selection_window(self):
-        path = QFileDialog.getOpenFileName(self, self.tr('Choose a file'), filter=self.tr('Task files (*.json)'))[0]
+        path = QFileDialog.getOpenFileName(self, self.tr('Choose a file'), filter=self.tr('JSON task files (*.json)'))[0]
         if path:
             self.tasksFileLineEdit.setText(path)
 
