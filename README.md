@@ -46,3 +46,26 @@ sending tasks will be saved.
 Finally, these settings must be saved using the <kbd>Save</kbd> button at the
 bottom. This will instantly generate a `settings.ini` file in the current
 working directory and allows the user to use the **Sending options** tab.
+
+## Sending options
+
+This tab is where the user can create, edit, and delete the sending tasks. It
+contains buttons to add, edit, and delete tasks. It also contains a table that
+shows the tasks that are currently saved in the tasks file. When a task is selected
+in the table, the **Email details** section will be populated with its details.
+
+To add a new task, the user has to click on the <kbd>Add</kbd> button. This will
+open a new window where the user can enter the details of the email to be sent.
+The fields in this window are: **To** which should contain the email address of 
+the receiver, **Subject** which should contain the subject of the email, and 
+**Content** which should contain the content of the email.
+
+Below, there is an **Attachment** section where the user can add a file to be
+attached to the email. The user can either enter the path of the file manually
+or click on the <kbd>Browse</kbd> button to select the file using a file chooser
+dialog.
+
+Beside the **Attachment** section, there is a **Schedule** section where the user
+can specify the frequency of sending the email. The user can indicate the count
+and the unit of the frequency. The available units are: **minutes**, **hours**,
+**days**, **weeks**, **months**, and **years**.
