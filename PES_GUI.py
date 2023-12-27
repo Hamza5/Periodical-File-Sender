@@ -10,7 +10,7 @@ from smtplib import SMTPAuthenticationError, SMTPConnectError, SMTPServerDisconn
 from threading import Thread, Lock
 
 from PyQt5.QtCore import pyqtSignal, QRegExp
-from PyQt5.QtGui import QFont, QRegExpValidator
+from PyQt5.QtGui import QFont, QRegExpValidator, QIcon
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem, QFileDialog, QMessageBox, QPushButton
 
 from GUI import Ui_MainWindow
@@ -424,5 +424,6 @@ def exception_handler(etype, value, traceback):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = MainWindow()
+    window.setWindowIcon(QIcon('icon.svg'))
     sys.excepthook = exception_handler
     sys.exit(app.exec())
