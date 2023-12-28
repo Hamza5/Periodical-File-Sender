@@ -13,6 +13,8 @@ user interface composed of two tabs: **Settings** and **Sending options**.
 
 ### Settings
 
+![Settings tab](screenshots/pfs_settings.png)
+
 This is the first view that appears in the first run of the application. It
 shows the permanent settings that should be set in order to make the
 application work. It is made of several sections:
@@ -52,6 +54,8 @@ working directory and allows the user to use the **Sending options** tab.
 
 ## Sending options
 
+![Sending options tab](screenshots/pfs_sending.png)
+
 This tab is where the user can create, edit, and delete the sending tasks. It
 contains buttons to add, edit, and delete tasks. It also contains a table that
 shows the tasks that are currently saved in the tasks file. When a task is selected
@@ -63,6 +67,8 @@ The fields in this window are: **To** which should contain the email address of
 the receiver, **Subject** which should contain the subject of the email, and 
 **Content** which should contain the content of the email.
 
+![Add task dialog](screenshots/pfs_email.png)
+
 Below, there is an **Attachment** section where the user can add a file to be
 attached to the email. The user can either enter the path of the file manually
 or click on the <kbd>Browse</kbd> button to select the file using a file chooser
@@ -73,13 +79,23 @@ can specify the frequency of sending the email. The user can indicate the count
 and the unit of the frequency. The available units are: **minutes**, **hours**,
 **days**, **weeks**, **months**, and **years**.
 
+After the user clicks on the <kbd>OK</kbd> button, the task will be added to the
+table in the **Sending options** tab. The details of the task can be viewed by
+selecting it in the table.
+
+![Sending options tab filled](screenshots/pfs_sending_filled.png)
+
 ## Monitoring status
 
 In the status bar of the application, there is a button that shows the current
-monitoring status. By default, the monitoring is disabled, which means that the
-sending tasks will not be executed unless the <kbd>Send now</kbd> button is clicked.
-When the user clicks on the button, the monitoring will be enabled and the sending
-tasks are executed according to their schedule.
+monitoring status. The monitoring should be enabled after adding the task.
+When it is disabled, sending tasks will not be executed periodically, but they
+can be executed manually using the <kbd>Send now</kbd> button.
+When the user clicks on the button, the monitoring will switch between enabled
+and disabled states.
+
+**Note:** the application should be running in order for the tasks to be executed
+periodically.
 
 # Installation instructions
 
