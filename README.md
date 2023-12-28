@@ -1,7 +1,7 @@
 # Periodical File Sender (PFS)
 #### (Formerly known as Periodical Email Sender - PES)
 
-<img src="icon.svg" width="128" height="128" alt="PFS icon">
+<img src="periodical_file_sender/icon.svg" width="128" height="128" alt="PFS icon">
 
 #### GUI-based tool to send emails with attachment periodically using an SMTP server
 

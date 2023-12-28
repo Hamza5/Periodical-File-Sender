@@ -1,4 +1,5 @@
 import json
+import os.path
 import sys
 import traceback as tb
 import types
@@ -13,9 +14,9 @@ from PyQt5.QtCore import pyqtSignal, QRegExp
 from PyQt5.QtGui import QFont, QRegExpValidator, QIcon
 from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QTableWidgetItem, QFileDialog, QMessageBox, QPushButton
 
-from GUI import Ui_MainWindow
-from email_dialog import Ui_AddEmailDialog
-from scheduling import TimedEmailMessage, SendingTimeMonitor
+from periodical_file_sender.GUI import Ui_MainWindow
+from periodical_file_sender.email_dialog import Ui_AddEmailDialog
+from periodical_file_sender.scheduling import TimedEmailMessage, SendingTimeMonitor
 
 EMAIL_REGEXP = QRegExp(r'.+@[\w-]+\.\w+')
 
@@ -417,13 +418,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         error_dialog.exec()
 
 
-def exception_handler(etype, value, traceback):
-    window.exception_happened.emit(etype, value, traceback)
+def main():
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'icon.svg')))
+
+    def exception_handler(etype, value, traceback):
+        window.exception_happened.emit(etype, value, traceback)
+
+    sys.excepthook = exception_handler
+    sys.exit(app.exec())
 
 
 if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.setWindowIcon(QIcon('icon.svg'))
-    sys.excepthook = exception_handler
-    sys.exit(app.exec())
+    main()
