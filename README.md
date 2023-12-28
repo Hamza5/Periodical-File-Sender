@@ -80,3 +80,19 @@ monitoring status. By default, the monitoring is disabled, which means that the
 sending tasks will not be executed unless the <kbd>Send now</kbd> button is clicked.
 When the user clicks on the button, the monitoring will be enabled and the sending
 tasks are executed according to their schedule.
+
+# Installation instructions
+
+This is a Python 3 application. Python 3.6 or higher is required to run it.
+It can be directly installed from this repository through `pip` using the following
+command:
+
+```bash
+pip install --user git+https://github.com/Hamza5/Periodical-File-Sender.git
+```
+
+After installation, the application can be run using the following command:
+
+```bash
+periodical_file_sender
+```
