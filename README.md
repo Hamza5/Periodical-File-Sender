@@ -72,3 +72,11 @@ Beside the **Attachment** section, there is a **Schedule** section where the use
 can specify the frequency of sending the email. The user can indicate the count
 and the unit of the frequency. The available units are: **minutes**, **hours**,
 **days**, **weeks**, **months**, and **years**.
+
+## Monitoring status
+
+In the status bar of the application, there is a button that shows the current
+monitoring status. By default, the monitoring is disabled, which means that the
+sending tasks will not be executed unless the <kbd>Send now</kbd> button is clicked.
+When the user clicks on the button, the monitoring will be enabled and the sending
+tasks are executed according to their schedule.
